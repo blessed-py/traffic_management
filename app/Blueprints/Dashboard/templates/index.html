@@ -1,0 +1,986 @@
+<!doctype html>
+<html lang="en" class="layout-navbar-fixed layout-menu-fixed layout-compact" dir="ltr" data-skin="default" data-template="vertical-menu-template" data-bs-theme="light">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
+    
+    <title>Smart Traffic Management - Live Dashboard</title>
+    <meta name="description" content="Real-time traffic monitoring and analytics" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{{url_for('static', filename='assets/img/favicon/favicon.ico')}}" />
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400;1,500;1,600;1,700&ampdisplay=swap" rel="stylesheet" />
+
+    <link rel="stylesheet" href="{{url_for('static', filename='assets/vendor/fonts/iconify-icons.css')}}" />
+
+    <!-- Google Maps will be loaded via JavaScript -->
+
+    <!-- Custom styles for real-time dashboard -->
+    <style>
+        #traffic-map { 
+            height: 450px; 
+            width: 100%; 
+            border-radius: 8px;
+            position: relative;
+            border: 1px solid #dee2e6;
+        }
+        
+        /* Ensure map container stays within card bounds */
+        .map-container {
+            position: relative;
+            overflow: hidden;
+            border-radius: 8px;
+            background: #e5e7eb;
+        }
+        
+        /* Google Maps styling */
+        .gm-style {
+            border-radius: 8px;
+        }
+        
+        /* Map loading state */
+        .map-loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 450px;
+            background: linear-gradient(45deg, #f0f0f0 25%, transparent 25%), 
+                        linear-gradient(-45deg, #f0f0f0 25%, transparent 25%), 
+                        linear-gradient(45deg, transparent 75%, #f0f0f0 75%), 
+                        linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            color: #666;
+            font-size: 16px;
+            border-radius: 8px;
+        }
+        
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            margin-top: 10px;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-light { background-color: #28a745; }
+        .status-moderate { background-color: #ffc107; }
+        .status-heavy { background-color: #dc3545; }
+        .status-unknown { background-color: #6c757d; }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .alert-card {
+            border-left: 4px solid;
+            animation: slideIn 0.3s ease-out;
+        }
+        
+        .alert-high { border-left-color: #dc3545; }
+        .alert-moderate { border-left-color: #ffc107; }
+        
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(-20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        
+        .metric-card {
+            transition: transform 0.2s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .congestion-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.5rem;
+        }
+        
+        .efficiency-bar {
+            height: 6px;
+            background: linear-gradient(90deg, #dc3545 0%, #ffc107 50%, #28a745 100%);
+            border-radius: 3px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .efficiency-indicator {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0%;
+            background: white;
+            border-radius: 0 3px 3px 0;
+            transition: width 0.5s ease;
+        }
+        
+        .live-indicator {
+            color: #28a745;
+            animation: blink 1.5s infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .intersection-marker {
+            background: rgba(255, 255, 255, 0.9);
+            border: 2px solid;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .marker-light { border-color: #28a745; color: #28a745; }
+        .marker-moderate { border-color: #ffc107; color: #ffc107; }
+        .marker-heavy { border-color: #dc3545; color: #dc3545; }
+        
+        .notification-toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            max-width: 350px;
+            z-index: 1055;
+            animation: slideInRight 0.3s ease;
+        }
+        
+        @keyframes slideInRight {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
+        }
+        
+        @keyframes pulse {
+            0% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.2); }
+            100% { transform: translate(-50%, -50%) scale(1); }
+        }
+    </style>
+
+    <!-- Core CSS -->
+    <link rel="stylesheet" href="{{url_for('static', filename='assets/vendor/libs/node-waves/node-waves.css')}}" />
+    <link rel="stylesheet" href="{{url_for('static', filename='assets/vendor/css/core.css')}}" />
+    <link rel="stylesheet" href="{{url_for('static', filename='assets/css/demo.css')}}" />
+    <link rel="stylesheet" href="{{url_for('static', filename='assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css')}}" />
+
+    <!-- Helpers -->
+    <script src="{{url_for('static', filename='assets/vendor/js/helpers.js')}}"></script>
+    <script src="{{url_for('static', filename='assets/js/config.js')}}"></script>
+    <!-- Leaflet CSS & JS -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+</head>
+
+<body>
+    <!-- Layout wrapper -->
+    <div class="layout-wrapper layout-content-navbar">
+        <div class="layout-container">
+            
+            <!-- Menu -->
+            <aside id="layout-menu" class="layout-menu menu-vertical menu">
+                <div class="app-brand demo">
+                    <a href="/" class="app-brand-link">
+                        <span class="app-brand-logo demo">
+                            <span class="text-primary">
+                                <svg width="32" height="22" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path fill-rule="evenodd" clip-rule="evenodd" d="M0.00172773 0V6.85398C0.00172773 6.85398 -0.133178 9.01207 1.98092 10.8388L13.6912 21.9964L19.7809 21.9181L18.8042 9.88248L16.4951 7.17289L9.23799 0H0.00172773Z" fill="currentColor" />
+                                    <path opacity="0.06" fill-rule="evenodd" clip-rule="evenodd" d="M7.69824 16.4364L12.5199 3.23696L16.5541 7.25596L7.69824 16.4364Z" fill="#161616" />
+                                    <path opacity="0.06" fill-rule="evenodd" clip-rule="evenodd" d="M8.07751 15.9175L13.9419 4.63989L16.5849 7.28475L8.07751 15.9175Z" fill="#161616" />
+                                    <path fill-rule="evenodd" clip-rule="evenodd" d="M7.77295 16.3566L23.6563 0H32V6.88383C32 6.88383 31.8262 9.17836 30.6591 10.4057L19.7824 22H13.6938L7.77295 16.3566Z" fill="currentColor" />
+                                </svg>
+                            </span>
+                        </span>
+                        <span class="app-brand-text demo menu-text fw-bold ms-3">Smart Traffic</span>
+                    </a>
+                    
+                    <a href="javascript:void(0);" class="layout-menu-toggle menu-link text-large ms-auto">
+                        <i class="icon-base ti menu-toggle-icon d-none d-xl-block"></i>
+                        <i class="icon-base ti tabler-x d-block d-xl-none"></i>
+                    </a>
+                </div>
+
+                <div class="menu-inner-shadow"></div>
+                
+                <ul class="menu-inner py-1">
+                    <li class="menu-item active open" id="live-menu-item">
+                        <a href="#" class="menu-link" id="live-menu-link">
+                            <i class="menu-icon icon-base ti tabler-smart-home"></i>
+                            <div>Live Dashboard</div>
+                        </a>
+                    </li>
+                    <li class="menu-item">
+                        <a href="#" class="menu-link" id="enable-location-btn">
+                            <i class="menu-icon icon-base ti tabler-current-location"></i>
+                            <div>Enable Location</div>
+                        </a>
+                    </li>
+                    <li class="menu-item" id="demo-menu-item">
+                        <a href="#" class="menu-link" id="generate-demo-btn">
+                            <i class="menu-icon icon-base ti tabler-test-pipe"></i>
+                            <div>Generate Demo Data</div>
+                        </a>
+                    </li>
+                </ul>
+            </aside>
+            
+            <!-- Layout page -->
+            <div class="layout-page">
+                <!-- Navbar -->
+                <nav class="layout-navbar container-xxl navbar-detached navbar navbar-expand-xl align-items-center bg-navbar-theme" id="layout-navbar">
+                    <div class="layout-menu-toggle navbar-nav align-items-xl-center me-3 me-xl-0 d-xl-none">
+                        <a class="nav-item nav-link px-0 me-xl-6" href="javascript:void(0)">
+                            <i class="icon-base ti tabler-menu-2 icon-md"></i>
+                        </a>
+                    </div>
+
+                    <div class="navbar-nav-right d-flex align-items-center justify-content-end" id="navbar-collapse">
+                        <div class="d-flex align-items-center">
+                            <span class="live-indicator me-2">●</span>
+                            <span class="badge bg-success" id="connection-status">Live</span>
+                            <span class="mx-3 text-muted">|</span>
+                            <span class="badge bg-secondary" id="data-mode-badge">Mode: Live</span>
+                            <span class="mx-3 text-muted">|</span>
+                            <span class="text-muted" id="last-update">Connecting...</span>
+                 
+            
+                        </div>
+                    </div>
+                </nav>
+                
+                <!-- Content wrapper -->
+                <div class="content-wrapper">
+                    <!-- Content -->
+                    <div class="container-xxl flex-grow-1 container-p-y">
+                        
+                        <!-- Overview Stats Row -->
+                        <div class="row g-4 mb-4">
+                            <div class="col-lg-3 col-md-6">
+                                <div class="card metric-card">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar avatar-sm me-3">
+                                                <span class="avatar-initial rounded-circle bg-label-primary">
+                                                    <i class="icon-base ti tabler-car"></i>
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <h6 class="mb-0">Active Intersections</h6>
+                                                <small class="text-muted">Currently monitored</small>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex align-items-center mt-2">
+                                            <h4 class="mb-0" id="total-intersections">0</h4>
+                                            <span class="status-indicator status-light ms-4"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-3 col-md-6">
+                                <div class="card metric-card">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar avatar-sm me-3">
+                                                <span class="avatar-initial rounded-circle bg-label-warning">
+                                                    <i class="icon-base ti tabler-alert-triangle"></i>
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <h6 class="mb-0">Congested Areas</h6>
+                                                <small class="text-muted">High traffic volume</small>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex align-items-center mt-2">
+                                            <h4 class="mb-0" id="congested-count">0</h4>
+                                            <span class="status-indicator status-moderate ms-4"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-3 col-md-6">
+                                <div class="card metric-card">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar avatar-sm me-3">
+                                                <span class="avatar-initial rounded-circle bg-label-info">
+                                                    <i class="icon-base ti tabler-activity"></i>
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <h6 class="mb-0">Network Status</h6>
+                                                <small class="text-muted">Overall traffic flow</small>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex align-items-center mt-2">
+                                            <h4 class="mb-0" id="network-status">Good</h4>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="col-lg-3 col-md-6">
+                                <div class="card metric-card">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar avatar-sm me-3">
+                                                <span class="avatar-initial rounded-circle bg-label-danger">
+                                                    <i class="icon-base ti tabler-bell"></i>
+                                                </span>
+                                            </div>
+                                            <div>
+                                                <h6 class="mb-0">Active Alerts</h6>
+                                                <small class="text-muted">Require attention</small>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex align-items-center mt-2">
+                                            <h4 class="mb-0" id="active-alerts">0</h4>
+                                            <span class="status-indicator status-light ms-4"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Main Dashboard Row -->
+                        <div class="row g-4">
+                            <!-- Traffic Map -->
+                            <div class="col-lg-8">
+                                <div class="card h-100">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h5 class="card-title mb-0">Live Traffic Map</h5>
+                                            <small class="text-muted">Real-time intersection monitoring</small>
+                                        </div>
+                                        <div>
+                                            <button class="btn btn-sm btn-outline-primary" id="locate-me-btn">
+                                                <i class="icon-base ti tabler-current-location me-1"></i>
+                                                Find Me
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="card-body p-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <small class="text-muted" id="data-source-label">Data source: Live</small>
+                                        </div>
+                                        <div class="map-container">
+                                            <div id="traffic-map">
+                                                <div class="map-loading">
+                                                    <div>
+                                                        <i class="icon-base ti tabler-map-2 icon-lg mb-2"></i><br>
+                                                        Loading map...
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Alerts and Analytics Panel -->
+                            <div class="col-lg-4">
+                                <!-- Active Alerts -->
+                                <div class="card mb-4">
+                                    <div class="card-header">
+                                        <h6 class="card-title mb-0">🚨 Active Alerts</h6>
+                                    </div>
+                                    <div class="card-body" id="alerts-container">
+                                        <div class="text-center text-muted py-3">
+                                            <i class="icon-base ti tabler-shield-check icon-lg mb-2"></i>
+                                            <p class="mb-0">All clear! No active alerts.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Intersection Analytics -->
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h6 class="card-title mb-0">📊 Intersection Analytics</h6>
+                                    </div>
+                                    <div class="card-body" id="analytics-container">
+                                        <div class="text-center text-muted py-3">
+                                            Loading analytics...
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Recent Events Table -->
+                        <div class="row g-4 mt-2">
+                            <div class="col-12">
+                                <div class="card">
+                                    <div class="card-header d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h5 class="card-title mb-0">Recent Traffic Events</h5>
+                                            <small class="text-muted">Live updates from intersection sensors</small>
+                                        </div>
+                                        <div>
+                                            <span class="badge bg-primary" id="events-count">0 events</span>
+                                        </div>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="table-responsive">
+                                            <table class="table table-hover" id="events-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Time</th>
+                                                        <th>Intersection</th>
+                                                        <th>Vehicles</th>
+                                                        <th>Avg Speed</th>
+                                                        <th>Queue Length</th>
+                                                        <th>Status</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="events-tbody">
+                                                    <tr>
+                                                        <td colspan="6" class="text-center text-muted py-4">
+                                                            <i class="icon-base ti tabler-loader icon-lg mb-2"></i>
+                                                            <br>Loading real-time data...
+                                                        </td>
+                                                    </tr>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Core JS -->
+    <script src="{{url_for('static', filename='assets/vendor/libs/jquery/jquery.js')}}"></script>
+    <script src="{{url_for('static', filename='assets/vendor/libs/popper/popper.js')}}"></script>
+    <script src="{{url_for('static', filename='assets/vendor/js/bootstrap.js')}}"></script>
+    <script src="{{url_for('static', filename='assets/vendor/libs/node-waves/node-waves.js')}}"></script>
+    <script src="{{url_for('static', filename='assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js')}}"></script>
+    <script src="{{url_for('static', filename='assets/vendor/js/menu.js')}}"></script>
+    <script src="{{url_for('static', filename='assets/js/main.js')}}"></script>
+
+    <!-- Google Maps API -->
+    <script>
+        // Leaflet map is loaded via CDN links in <head>
+    </script>
+
+    <!-- Socket.IO for real-time updates -->
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+    <!-- Main Dashboard JS -->
+    <script>
+
+
+        // Real-time Traffic Dashboard with Leaflet
+        class TrafficDashboard {
+            constructor() {
+                this.socket = null;
+                this.map = null;
+                this.markers = new Map();
+                this.userLocation = null;
+                this.userMarker = null;
+                this.latestById = new Map(); // intersection_id -> latest event (with meta)
+                this.manualMode = null; // 'Live' | 'Demo' | null (Auto)
+                
+                this.init();
+            }
+
+            init() {
+                this.initSocket();
+                // Initialize Leaflet map immediately
+                this.initMap();
+                this.bindEvents();
+                // No default highway assumed; labels show highway only when present in meta
+                // Initialize mode indicators
+                this.setDataMode('Live');
+            }
+
+            initSocket() {
+                this.socket = io();
+                
+                this.socket.on('connect', () => {
+                    console.log('Connected to server');
+                    document.getElementById('connection-status').textContent = 'Live';
+                    document.getElementById('connection-status').className = 'badge bg-success';
+                    this.socket.emit('subscribe_updates');
+                });
+                
+                this.socket.on('disconnect', () => {
+                    console.log('Disconnected from server');
+                    document.getElementById('connection-status').textContent = 'Offline';
+                    document.getElementById('connection-status').className = 'badge bg-danger';
+                });
+                
+                this.socket.on('initial_data', (data) => {
+                    this.updateDashboard(data);
+                });
+                
+                this.socket.on('traffic_update', (data) => {
+                    this.updateDashboard(data);
+                    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+                });
+                
+                this.socket.on('critical_alert', (data) => {
+                    // Suppressed toast popups for critical alerts
+                });
+            }
+
+            initMap() {
+                const mapEl = document.getElementById('traffic-map');
+                if (!mapEl) return;
+
+                // Default center: Punjab (near Ludhiana on NH44)
+                const defaultCenter = [30.900965, 75.857277];
+
+                this.map = L.map(mapEl).setView(defaultCenter, 12);
+
+                // OpenStreetMap tiles
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(this.map);
+
+                // Layer to hold markers
+                this.markers = new Map();
+            }
+
+            bindEvents() {
+                // Enable location button
+                document.getElementById('enable-location-btn').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.getCurrentLocation();
+                });
+
+                // Locate me button
+                document.getElementById('locate-me-btn').addEventListener('click', () => {
+                    this.getCurrentLocation();
+                });
+
+                // Generate demo data button
+                document.getElementById('generate-demo-btn').addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.generateDemoData();
+                });
+
+                // Mode control buttons
+                const liveBtn = document.getElementById('mode-live-btn');
+                const demoBtn = document.getElementById('mode-demo-btn');
+                const autoBtn = document.getElementById('mode-auto-btn');
+                if (liveBtn) liveBtn.addEventListener('click', () => { this.manualMode = 'Live'; this.setDataMode('Live'); });
+                if (demoBtn) demoBtn.addEventListener('click', () => { this.manualMode = 'Demo'; this.setDataMode('Demo'); });
+                if (autoBtn) autoBtn.addEventListener('click', () => { this.manualMode = null; this.updateDataMode(this.collectCurrentEvents()); });
+
+                // Side panel menu controls
+                const liveMenuLink = document.getElementById('live-menu-link');
+                const liveMenuItem = document.getElementById('live-menu-item');
+                const demoMenuItem = document.getElementById('demo-menu-item');
+                if (liveMenuLink) liveMenuLink.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.manualMode = 'Live';
+                    this.setDataMode('Live');
+                    // Update active classes
+                    if (liveMenuItem) liveMenuItem.classList.add('active','open');
+                    if (demoMenuItem) demoMenuItem.classList.remove('active','open');
+                });
+                const demoMenuLink = document.getElementById('generate-demo-btn');
+                if (demoMenuLink) demoMenuLink.addEventListener('click', () => {
+                    // When demo is generated, reflect Demo as active
+                    this.manualMode = 'Demo';
+                    this.setDataMode('Demo');
+                    if (demoMenuItem) demoMenuItem.classList.add('active','open');
+                    if (liveMenuItem) liveMenuItem.classList.remove('active','open');
+                });
+            }
+
+            getCurrentLocation() {
+                if (!navigator.geolocation) {
+                    return;
+                }
+
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        this.userLocation = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        };
+                        
+                        // Add user location marker to custom map
+                        this.addUserLocationMarker();
+                        // Suppressed toast
+                    },
+                    (error) => {
+                        let message = 'Unable to get your location';
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                message = 'Location access denied by user';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                message = 'Location information unavailable';
+                                break;
+                            case error.TIMEOUT:
+                                message = 'Location request timed out';
+                                break;
+                        }
+                        // Suppressed toast
+                    }
+                );
+            }
+            
+            addUserLocationMarker() {
+                if (!this.map || !this.userLocation) return;
+
+                if (this.userMarker) this.map.removeLayer(this.userMarker);
+
+                this.userMarker = L.circleMarker([this.userLocation.lat, this.userLocation.lng], {
+                    radius: 8,
+                    fillColor: '#0d6efd',
+                    color: '#fff',
+                    weight: 2,
+                    fillOpacity: 1
+                }).addTo(this.map);
+
+                this.map.setView([this.userLocation.lat, this.userLocation.lng], 14);
+            }
+
+            generateDemoData() {
+                fetch('/api/demo/generate')
+                    .then(response => response.json())
+                    .then(data => {
+                        // Suppressed toast
+                        // Demo data will include highway codes where applicable
+                        // Immediately reflect Demo mode in UI
+                        this.setDataMode('Demo');
+                    })
+                    .catch(error => {
+                        // Suppressed toast
+                    });
+            }
+
+            updateDashboard(data) {
+                // Update overview stats
+                if (data.analysis && data.analysis.overall_stats) {
+                    const stats = data.analysis.overall_stats;
+                    document.getElementById('total-intersections').textContent = stats.total_intersections || 0;
+                    document.getElementById('congested-count').textContent = stats.congested_intersections || 0;
+                    document.getElementById('network-status').textContent = this.capitalizeFirst(stats.network_status || 'Unknown');
+                }
+
+                // Build latest events index for metadata lookup (city/highway)
+                if (data.events && Array.isArray(data.events)) {
+                    data.events.forEach(e => this.latestById.set(e.intersection_id, e));
+                } else if (data.recent_events && Array.isArray(data.recent_events)) {
+                    data.recent_events.forEach(e => this.latestById.set(e.intersection_id, e));
+                }
+
+                // Update Data Mode based on source of incoming events
+                const evts = (data.events && Array.isArray(data.events)) ? data.events : (data.recent_events || []);
+                if (this.manualMode) {
+                    // Honor manual override
+                    this.setDataMode(this.manualMode);
+                } else {
+                    this.updateDataMode(evts);
+                }
+
+                // Update alerts (enriched with highway/city when available)
+                if (data.analysis && data.analysis.alerts) {
+                    this.updateAlerts(data.analysis.alerts);
+                    document.getElementById('active-alerts').textContent = data.analysis.alerts.length;
+                }
+
+                // Update intersection analytics
+                if (data.analysis && data.analysis.intersections) {
+                    this.updateAnalytics(data.analysis.intersections);
+                }
+
+                // Update map with intersections
+                if (data.events) {
+                    this.updateMap(data.events, data.analysis);
+                    this.updateEventsTable(data.events);
+                }
+            }
+
+            updateAlerts(alerts) {
+                const container = document.getElementById('alerts-container');
+                
+                if (!alerts || alerts.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center text-muted py-3">
+                            <i class="icon-base ti tabler-shield-check icon-lg mb-2"></i>
+                            <p class="mb-0">All clear! No active alerts.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = alerts.map(alert => {
+                    const iid = alert.intersection_id;
+                    const evt = this.latestById.get(iid);
+                    const meta = (evt && evt.meta) || {};
+                    const labelParts = [];
+                    if (meta.highway) labelParts.push(meta.highway);
+                    if (meta.city) labelParts.push(meta.city);
+                    const prettyLoc = labelParts.length ? `${labelParts.join(' - ')} (${iid})` : iid;
+                    const msg = alert.message.replace(iid, prettyLoc);
+                    return `
+                    <div class="alert-card alert alert-${alert.severity === 'high' ? 'danger' : 'warning'} mb-2">
+                        <div class="d-flex align-items-start">
+                            <div class="flex-shrink-0 me-2">
+                                <i class="icon-base ti tabler-alert-triangle"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">${msg}</h6>
+                                <small class="text-muted">
+                                    ${alert.details.vehicle_count} vehicles, 
+                                    ${alert.details.avg_speed.toFixed(1)} km/h avg
+                                </small>
+                            </div>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+
+            updateAnalytics(intersections) {
+                const container = document.getElementById('analytics-container');
+                const intersectionList = Object.entries(intersections).slice(0, 5); // Show top 5
+
+                if (intersectionList.length === 0) {
+                    container.innerHTML = `
+                        <div class="text-center text-muted py-3">
+                            No intersection data available
+                        </div>
+                    `;
+                    return;
+                }
+
+                container.innerHTML = intersectionList.map(([id, data]) => `
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <span class="fw-semibold">${id}</span>
+                            <span class="badge ${this.getCongestionBadgeClass(data.congestion_level)} congestion-badge">
+                                ${data.congestion_level}
+                            </span>
+                        </div>
+                        <div class="efficiency-bar mb-2">
+                            <div class="efficiency-indicator" style="width: ${data.efficiency_score}%"></div>
+                        </div>
+                        <small class="text-muted">
+                            Efficiency: ${data.efficiency_score}% | Trend: ${data.trend}
+                        </small>
+                    </div>
+                `).join('');
+            }
+
+            updateMap(events) {
+                if (!this.map) return;
+
+                // Clear old markers
+                this.markers.forEach(marker => this.map.removeLayer(marker));
+                this.markers.clear();
+
+                const bounds = [];
+
+                (events || []).forEach(e => {
+                    const m = e.meta || {};
+                    if (m.lat === undefined || m.lng === undefined) return;
+
+                    const lat = parseFloat(m.lat);
+                    const lng = parseFloat(m.lng);
+                    if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+                    const level = this.analyzeCongestion(e);
+                    const color = this.getMarkerColor(level);
+
+                    const meta = e.meta || {};
+                    const labelParts = [];
+                    if (meta.highway) labelParts.push(meta.highway);
+                    if (meta.city) labelParts.push(meta.city);
+                    const prettyLoc = labelParts.length ? `${labelParts.join(' - ')} (${e.intersection_id})` : e.intersection_id;
+
+                    const marker = L.circleMarker([lat, lng], {
+                        radius: 10,
+                        fillColor: color,
+                        color: '#fff',
+                        weight: 2,
+                        opacity: 1,
+                        fillOpacity: 1
+                    }).addTo(this.map);
+
+                    marker.bindPopup(`
+                        <strong>${prettyLoc}</strong><br/>
+                        Vehicles: ${e.vehicle_count}<br/>
+                        Avg Speed: ${e.avg_speed}<br/>
+                        Queue: ${e.queue_len}
+                    `);
+                    marker.bindTooltip(prettyLoc, { direction: 'top', offset: [0, -12] });
+
+                    this.markers.set(e.intersection_id, marker);
+                    bounds.push([lat, lng]);
+                });
+
+                if (bounds.length) this.map.fitBounds(bounds);
+
+                // No corridor-forced centering; map fits all current markers
+            }
+
+        
+    
+            getMarkerColor(congestionLevel) {
+                switch(congestionLevel) {
+                    case 'heavy': return '#dc3545';
+                    case 'moderate': return '#ffc107';
+                    default: return '#28a745';
+                }
+            }
+            
+            showIntersectionDetails(event, congestionLevel) {
+                const details = `
+                    <strong>${event.intersection_id}</strong><br>
+                    Vehicles: ${event.vehicle_count}<br>
+                    Speed: ${event.avg_speed.toFixed(1)} km/h<br>
+                    Queue: ${event.queue_len}<br>
+                    Status: ${congestionLevel.toUpperCase()}
+                `;
+                
+                this.showNotification('Intersection Details', details, 
+                    congestionLevel === 'heavy' ? 'danger' : 
+                    congestionLevel === 'moderate' ? 'warning' : 'info');
+            }
+
+            updateEventsTable(events) {
+                const tbody = document.getElementById('events-tbody');
+                document.getElementById('events-count').textContent = `${events.length} events`;
+
+                if (!events || events.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                No traffic events yet
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                tbody.innerHTML = events.slice(0, 10).map(event => {
+                    const congestionLevel = this.analyzeCongestion(event);
+                    const meta = event.meta || {};
+                    const labelParts = [];
+                    if (meta.highway) labelParts.push(meta.highway);
+                    if (meta.city) labelParts.push(meta.city);
+                    const prettyLoc = labelParts.length ? `${labelParts.join(' - ')} (${event.intersection_id})` : event.intersection_id;
+                    return `
+                        <tr>
+                            <td>${new Date(event.timestamp).toLocaleTimeString()}</td>
+                            <td><strong>${prettyLoc}</strong></td>
+                            <td>${event.vehicle_count}</td>
+                            <td>${event.avg_speed.toFixed(1)} km/h</td>
+                            <td>${event.queue_len}</td>
+                            <td>
+                                <span class="badge ${this.getCongestionBadgeClass(congestionLevel)}">
+                                    ${congestionLevel}
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            analyzeCongestion(event) {
+                const score = (event.vehicle_count >= 15 ? 2 : event.vehicle_count >= 10 ? 1 : 0) +
+                              (event.avg_speed <= 20 ? 2 : event.avg_speed <= 30 ? 1 : 0) +
+                              (event.queue_len >= 8 ? 2 : event.queue_len >= 5 ? 1 : 0);
+                
+                if (score >= 4) return 'heavy';
+                if (score >= 2) return 'moderate';
+                return 'light';
+            }
+
+            getCongestionBadgeClass(level) {
+                switch(level) {
+                    case 'heavy':
+                    case 'high': return 'bg-danger';
+                    case 'moderate': return 'bg-warning';
+                    default: return 'bg-success';
+                }
+            }
+
+            capitalizeFirst(str) {
+                return str.charAt(0).toUpperCase() + str.slice(1);
+            }
+
+            showNotification(title, message, type = 'info') {
+                // Toasts suppressed per user request
+                return;
+            }
+
+            setDataMode(mode) {
+                const badge = document.getElementById('data-mode-badge');
+                const label = document.getElementById('data-source-label');
+                const conn = document.getElementById('connection-status');
+                if (!badge || !label || !conn) return;
+                // Normalize classes
+                ['bg-success','bg-info','bg-secondary','bg-warning','bg-danger'].forEach(c => {
+                    badge.classList.remove(c);
+                });
+                if (mode === 'Demo') {
+                    badge.textContent = 'Mode: Demo';
+                    badge.classList.add('badge','bg-info');
+                    label.textContent = 'Data source: Demo';
+                    // Do not change connection-status text (still Live socket), but dim color to avoid confusion
+                    conn.className = 'badge bg-secondary';
+                } else {
+                    badge.textContent = 'Mode: Live';
+                    badge.classList.add('badge','bg-success');
+                    label.textContent = 'Data source: Live';
+                    conn.className = 'badge bg-success';
+                }
+            }
+
+            updateDataMode(events) {
+                if (!events || !events.length) return; // keep current mode
+                let demo = 0, live = 0;
+                events.forEach(e => {
+                    const src = (e.meta || {}).source;
+                    if (src === 'demo_generator') demo++;
+                    else live++; // treat others as live/simulation
+                });
+                this.setDataMode(demo > live ? 'Demo' : 'Live');
+            }
+
+            collectCurrentEvents() {
+                // Try to reconstruct a list of recent events from the index
+                const list = [];
+                this.latestById.forEach(e => list.push(e));
+                return list;
+            }
+        }
+
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new TrafficDashboard();
+        });
+    </script>
+</body>
+</html>
